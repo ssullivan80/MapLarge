@@ -1,0 +1,12 @@
+# .NET build results
+bin/
+obj/
+
+# VS Code settings
+.vscode/
+
+# VS settings
+.vs/
+
+*.user
+*.suo

@@ -1,3 +1,5 @@
+using Swashbuckle.AspNetCore.Swagger;
+
 namespace TestProject {
     public class Program {
         public static void Main(string[] args) {
@@ -7,7 +9,16 @@ namespace TestProject {
 
             builder.Services.AddControllers();
 
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
+
             var app = builder.Build();
+
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
 
             // Configure the HTTP request pipeline.
 

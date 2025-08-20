@@ -2,9 +2,148 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title></title>
+    <title>File Browser</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        #results {
+            margin-top: 20px;
+        }
+
+        .file-link, .dir-link {
+            display: block;
+            margin: 2px 0;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+        }
+    </style>
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            var k = 1024,
+                sizes = ['B', 'KB', 'MB', 'GB', 'TB'],
+                i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function fetchResults() {
+            var path = $("#path").val();
+            var search = $("#search").val();
+            var recursive = $("#recursive").is(":checked");
+            $.get("/test", { path: path, search: search, recursive: recursive }, function (data) {
+                var summary = `<div>
+                            <strong>Directories:</strong> ${data.directoryCount} &nbsp;
+                            <strong>Files:</strong> ${data.fileCount} &nbsp;
+                            <strong>Total File Size:</strong> ${formatBytes(data.totalFileSize)}
+                        </div><hr/>`;
+
+                //var html = summary + "<h3>Directories</h3>";
+                //if (data.directories.length === 0) html += "<div>No directories found.</div>";
+                //data.directories.forEach(function (dir) {
+                //    html += `<a href="#" class="dir-link" data-path="${dir}">${dir}</a>`;
+                //});
+
+                var html = "<h3>Results</h3>";
+                if (data.results.length === 0) {
+                    html += "<div>No files found.</div>";
+                } else {
+                    html += `<table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Size</th>
+                                        <th>Type</th>
+                                        <th>Last Modified</th>
+                                        <th>Folder</th>
+                                        <th>Download</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                    data.results.forEach(function (file) {
+                        html += `<tr>
+                                    <td>`
+                        if (file.type == 'File folder') {
+                            html += `<a href="#" class="dir-link" data-path="${file.fullPath}">${file.name}</a>`;
+                        }
+                        else {
+                            html += file.name
+                        }
+                        html += `</td >
+                                    <td>${file.size > 0 ? formatBytes(file.size) : ''}</td>
+                                    <td>${file.type}</td>
+                                    <td>${new Date(file.lastModified).toLocaleString()}</td>
+                                    <td>${file.folder}</td>
+                                    <td>`;
+                        if (file.type != 'File folder') {
+                            html += `<a href="/download?path=${encodeURIComponent(file.fullPath)}" class="file-link" download > Download</a >`;
+                        }
+                        html += `</td >
+                                
+                                </tr>`;
+                    });
+                    html += "</tbody></table>";
+                }
+                $("#results").html(html);
+            }).fail(function (xhr) {
+                $("#results").html("<div style='color:red;'>Error: " + xhr.responseText + "</div>");
+            });
+        }
+
+        $(function () {
+            fetchResults();
+
+            $("#searchForm").on("submit", function (e) {
+                e.preventDefault();
+                fetchResults();
+            });
+
+            $("#results").on("click", ".dir-link", function (e) {
+                e.preventDefault();
+                $("#path").val($(this).data("path"));
+                fetchResults();
+            });
+
+            $("#uploadForm").on("submit", function (e) {
+                e.preventDefault();
+                var formData = new FormData(this);
+                formData.append("path", $("#path").val());
+                $.ajax({
+                    url: "/upload",
+                    type: "POST",
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function () {
+                        alert("Upload successful!");
+                        fetchResults();
+                    },
+                    error: function (xhr) {
+                        alert("Upload failed: " + xhr.responseText);
+                    }
+                });
+            });
+        });
+    </script>
 </head>
 <body>
-    Hello World!
+    <h2>File Browser</h2>
+    <form id="searchForm">
+        <label>Path: <input type="text" id="path" name="path" style="width:300px;" /></label>
+        <label>Search: <input type="text" id="search" name="search" /></label>
+        <label><input type="checkbox" id="recursive" name="recursive" /> Recursive</label>
+        <button type="submit">Search</button>
+    </form>
+    <form id="uploadForm" enctype="multipart/form-data" style="margin-top:10px;">
+        <input type="file" name="file" required />
+        <button type="submit">Upload</button>
+    </form>
+    <div id="results"></div>
 </body>
 </html>
