@@ -20,5 +20,17 @@
         <button type="submit">Upload</button>
     </form>
     <div id="results"></div>
+    <div id="moveModal">
+        <h4>Move File</h4>
+        <input type="text" id="moveDest" placeholder="Destination path" style="width:300px;" />
+        <button id="moveConfirm">Move</button>
+        <button type="button" onclick="$('#moveModal').hide();">Cancel</button>
+    </div>
+    <div id="copyModal">
+        <h4>Copy File</h4>
+        <input type="text" id="copyDest" placeholder="Destination path" style="width:300px;" />
+        <button id="copyConfirm">Copy</button>
+        <button type="button" onclick="$('#copyModal').hide();">Cancel</button>
+    </div>
 </body>
 </html>

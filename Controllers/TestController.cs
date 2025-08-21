@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Win32;
-using System.IO;
 using TestProject.Models;
 
 namespace TestProject.Controllers {
@@ -16,7 +14,14 @@ namespace TestProject.Controllers {
             _configuration = configuration;
         }
 
-        [HttpGet]
+        /// <summary>
+        /// Get files and directories in the specified path, optionally filtering by search term and recursion
+        /// </summary>
+        /// <param name="path"></param>
+        /// <param name="search">The search parameters to search for</param>
+        /// <param name="recursive">To include subdirectories</param>
+        /// <returns></returns>
+        [HttpGet("/search")]
         public IActionResult Get([FromQuery] string? path, [FromQuery] string? search, [FromQuery] bool recursive = false) 
         {
             // use default path from configuration if not provided
@@ -50,8 +55,7 @@ namespace TestProject.Controllers {
                 {
                     Name = info.Name,
                     Folder = info.DirectoryName,
-                    Size = info.Length,
-                    Type = GetFileTypeNameByExtension(info.Extension),
+                    Size = info.Length,                    
                     LastModified = info.LastWriteTime,
                     FullPath = f
                 };
@@ -63,7 +67,7 @@ namespace TestProject.Controllers {
                 return new Result
                 {
                     Name = directory.Name,
-                    Folder = directory.Parent.FullName,                    
+                    Folder = directory.Parent?.FullName ?? string.Empty,
                     Type = FileFolder,
                     LastModified = directory.LastWriteTime,
                     FullPath = d
@@ -72,12 +76,17 @@ namespace TestProject.Controllers {
 
             return Ok(new
             {
-                Results = fileDetails.Concat(directoryDetails),
+                Results = directoryDetails.Concat(fileDetails),
                 FileCount = fileDetails.Count,
                 DirectoryCount = directoryDetails.Count,                
             });
         }
 
+        /// <summary>
+        /// Download a file from the specified path
+        /// </summary>
+        /// <param name="path">The path of the file to download</param>
+        /// <returns></returns>
         [HttpGet("/download")]
         public IActionResult Download([FromQuery] string path)
         {
@@ -96,6 +105,12 @@ namespace TestProject.Controllers {
             return File(fileBytes, mimeType, fileName);
         }
 
+        /// <summary>
+        /// Upload a file to the specified path
+        /// </summary>
+        /// <param name="file">The file to upload</param>
+        /// <param name="path">The path to upload to</param>
+        /// <returns></returns>
         [HttpPost("/upload")]
         public IActionResult Upload(IFormFile file, [FromForm] string? path)
         {
@@ -116,54 +131,93 @@ namespace TestProject.Controllers {
             return Ok();
         }
 
-        private string GetFileTypeNameByExtension(string extension)
+        /// <summary>
+        /// Delete a file at the specified path.       
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        [HttpDelete("/delete")]
+        public IActionResult Delete([FromForm] string path)
         {
-            if (string.IsNullOrWhiteSpace(extension))
-            {
-                return string.Empty;
-            }
-
-            // Ensure the extension starts with a dot
-            if (!extension.StartsWith("."))
-            {
-                extension = "." + extension;
-            }
-
-            string fileTypeName = string.Empty;
+            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+                return BadRequest("Invalid file path.");
 
             try
             {
-                // Open the HKEY_CLASSES_ROOT key for the extension
-                using (RegistryKey extensionKey = Registry.ClassesRoot.OpenSubKey(extension))
-                {
-                    if (extensionKey != null)
-                    {
-                        // Get the default value (ProgID) associated with the extension
-                        string progId = extensionKey.GetValue(null) as string;
-
-                        if (!string.IsNullOrEmpty(progId))
-                        {
-                            // Open the HKEY_CLASSES_ROOT key for the ProgID
-                            using (RegistryKey progIdKey = Registry.ClassesRoot.OpenSubKey(progId))
-                            {
-                                if (progIdKey != null)
-                                {
-                                    // The default value of the ProgID key often contains the friendly name
-                                    fileTypeName = progIdKey.GetValue(null) as string;
-                                }
-                            }
-                        }
-                    }
-                }
+                System.IO.File.Delete(path);
+                return Ok();
             }
             catch (Exception ex)
             {
-                // Handle potential exceptions during Registry access
-                Console.WriteLine($"Error accessing Registry: {ex.Message}");
-                fileTypeName = string.Empty;
+                _logger.LogError(ex, "Error deleting file: {Path}", path);
+                return StatusCode(500, "Error deleting file.");
+            }
+        }
+
+        /// <summary>
+        /// Move a file from sourcePath to destPath.
+        /// </summary>
+        /// <param name="sourcePath">source file</param>
+        /// <param name="destPath">destination path</param>
+        /// <returns></returns>
+        [HttpPost("/move")]
+        public IActionResult Move([FromForm] string sourcePath, [FromForm] string destPath)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath) || !System.IO.File.Exists(sourcePath))
+                return BadRequest("Invalid source file path.");
+            if (string.IsNullOrWhiteSpace(destPath))
+                return BadRequest("Invalid destination path.");
+
+            //if destination path is a directory, combine with source file name 
+            if (Directory.Exists(destPath))
+            {
+                var fileName = Path.GetFileName(sourcePath);
+                destPath = Path.Combine(destPath, fileName);
             }
 
-            return fileTypeName ?? string.Empty; // Return empty string if no name found
+            try
+            {
+                System.IO.File.Move(sourcePath, destPath, overwrite: true);
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error moving file: {Source} -> {Dest}", sourcePath, destPath);
+                return StatusCode(500, "Error moving file.");
+            }
+        }
+
+        /// <summary>
+        /// Copy a file from sourcePath to destPath.
+        /// </summary>
+        /// <param name="sourcePath">source file</param>
+        /// <param name="destPath">destination path</param>
+        /// <returns></returns>
+        [HttpPost("/copy")]
+        public IActionResult Copy([FromForm] string sourcePath, [FromForm] string destPath)
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath) || !System.IO.File.Exists(sourcePath))
+                return BadRequest("Invalid source file path.");
+            if (string.IsNullOrWhiteSpace(destPath))
+                return BadRequest("Invalid destination path.");
+
+            //if destination path is a directory, combine with source file name 
+            if (Directory.Exists(destPath))
+            {
+                var fileName = Path.GetFileName(sourcePath);
+                destPath = Path.Combine(destPath, fileName);
+            }
+
+            try
+            {
+                System.IO.File.Copy(sourcePath, destPath, overwrite: true);
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error copying file: {Source} -> {Dest}", sourcePath, destPath);
+                return StatusCode(500, "Error copying file.");
+            }
         }
     }
 }

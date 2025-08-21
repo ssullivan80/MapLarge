@@ -1,6 +1,15 @@
-﻿#results {
-    margin-top: 20px;
+﻿
+#moveModal, #copyModal {
+    display: none;
+    position: fixed;
+    left: 50%;
+    top: 30%;
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 20px;
+    z-index: 1000;
 }
+    
 
 .file-link, .dir-link {
     display: block;
