@@ -54,11 +54,11 @@ function populateResults(data) {
                             <td>${file.folder}</td>
                             <td>`;
                                 if (file.type != 'File folder') {
-                                    html += `<button class="download-btn" data-path="${file.fullPath}">Download</button>
-                                            <button class="delete-btn" data-path="${file.fullPath}">Delete</button>
+                                    html += `<button class="download-btn" data-path="${file.fullPath}">Download</button>`;
+                                }
+                                    html += `<button class="delete-btn" data-path="${file.fullPath}">Delete</button>
                                             <button class="move-btn" data-path="${file.fullPath}">Move</button>
                                             <button class="copy-btn" data-path="${file.fullPath}">Copy</button>`;
-                                }
                      html += `</td >
                                 
                     </tr>`;

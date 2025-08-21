@@ -6,12 +6,15 @@ namespace TestProject.Controllers {
     [Route("[controller]")]
     public class TestController : ControllerBase {
         private const string FileFolder = "File folder";
+        private static string DefaultFolder = "";
         private readonly ILogger<TestController> _logger;
         private readonly IConfiguration _configuration;
 
         public TestController(ILogger<TestController> logger, IConfiguration configuration) {
             _logger = logger;
             _configuration = configuration;
+
+            DefaultFolder = _configuration["ApiSettings:BaseDirectory"];
         }
 
         /// <summary>
@@ -27,7 +30,7 @@ namespace TestProject.Controllers {
             // use default path from configuration if not provided
             if (string.IsNullOrEmpty(path))
             { 
-                path = _configuration["ApiSettings:BaseDirectory"];
+                path = DefaultFolder;
             }
 
             // check if path is valid            
@@ -93,8 +96,11 @@ namespace TestProject.Controllers {
             // use default path from configuration if not provided
             if (string.IsNullOrEmpty(path))
             {
-                path = _configuration["ApiSettings:BaseDirectory"];
+                path = DefaultFolder;
             }
+
+            if (!IsPathWithinFolder(path, DefaultFolder))
+                return BadRequest("Destination path is not within sandbox.");
 
             if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
                 return BadRequest("Invalid file path.");
@@ -117,8 +123,11 @@ namespace TestProject.Controllers {
             // use default path from configuration if not provided
             if (string.IsNullOrEmpty(path))
             {
-                path = _configuration["ApiSettings:BaseDirectory"];
+                path = DefaultFolder;
             }
+
+            if (!IsPathWithinFolder(path, DefaultFolder))
+                return BadRequest("Destination path is not within sandbox.");
 
             if (file == null || string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
                 return BadRequest("Invalid upload request.");
@@ -139,18 +148,31 @@ namespace TestProject.Controllers {
         [HttpDelete("/delete")]
         public IActionResult Delete([FromForm] string path)
         {
-            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
-                return BadRequest("Invalid file path.");
+            if (string.IsNullOrWhiteSpace(path))
+                return BadRequest("Invalid file or directory path.");
+            if (!IsPathWithinFolder(path, DefaultFolder))
+                return BadRequest("Destination path is not within sandbox.");
 
             try
             {
-                System.IO.File.Delete(path);
+                if (System.IO.File.Exists(path))
+                {
+                    System.IO.File.Delete(path);
+                }
+                else if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                }
+                else
+                {
+                    return NotFound("File or directory does not exist.");
+                }
                 return Ok();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting file: {Path}", path);
-                return StatusCode(500, "Error deleting file.");
+                _logger.LogError(ex, "Error deleting file or directory: {Path}", path);
+                return StatusCode(500, "Error deleting file or directory.");
             }
         }
 
@@ -163,27 +185,49 @@ namespace TestProject.Controllers {
         [HttpPost("/move")]
         public IActionResult Move([FromForm] string sourcePath, [FromForm] string destPath)
         {
-            if (string.IsNullOrWhiteSpace(sourcePath) || !System.IO.File.Exists(sourcePath))
-                return BadRequest("Invalid source file path.");
+            if (string.IsNullOrWhiteSpace(sourcePath))
+                return BadRequest("Invalid source file or directory path.");
             if (string.IsNullOrWhiteSpace(destPath))
                 return BadRequest("Invalid destination path.");
-
-            //if destination path is a directory, combine with source file name 
-            if (Directory.Exists(destPath))
-            {
-                var fileName = Path.GetFileName(sourcePath);
-                destPath = Path.Combine(destPath, fileName);
-            }
+            if (!IsPathWithinFolder(destPath, DefaultFolder))
+                return BadRequest("Destination path is not within sandbox.");
 
             try
             {
-                System.IO.File.Move(sourcePath, destPath, overwrite: true);
+                if (System.IO.File.Exists(sourcePath))
+                {
+                    // If destination path is a directory, combine with source file name
+                    if (Directory.Exists(destPath))
+                    {
+                        var fileName = Path.GetFileName(sourcePath);
+                        destPath = Path.Combine(destPath, fileName);
+                    }
+                    System.IO.File.Move(sourcePath, destPath, overwrite: true);
+                }
+                else if (Directory.Exists(sourcePath))
+                {
+                    // If destPath exists and is a file, error
+                    if (System.IO.File.Exists(destPath))
+                        return BadRequest("Cannot move directory to a file path.");
+
+                    // If destPath is an existing directory, move into it
+                    if (Directory.Exists(destPath))
+                    {
+                        var dirName = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                        destPath = Path.Combine(destPath, dirName);
+                    }
+                    Directory.Move(sourcePath, destPath);
+                }
+                else
+                {
+                    return NotFound("Source file or directory does not exist.");
+                }
                 return Ok();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error moving file: {Source} -> {Dest}", sourcePath, destPath);
-                return StatusCode(500, "Error moving file.");
+                _logger.LogError(ex, "Error moving file or directory: {Source} -> {Dest}", sourcePath, destPath);
+                return StatusCode(500, "Error moving file or directory.");
             }
         }
 
@@ -196,28 +240,87 @@ namespace TestProject.Controllers {
         [HttpPost("/copy")]
         public IActionResult Copy([FromForm] string sourcePath, [FromForm] string destPath)
         {
-            if (string.IsNullOrWhiteSpace(sourcePath) || !System.IO.File.Exists(sourcePath))
+            if (string.IsNullOrWhiteSpace(sourcePath))
                 return BadRequest("Invalid source file path.");
             if (string.IsNullOrWhiteSpace(destPath))
                 return BadRequest("Invalid destination path.");
-
-            //if destination path is a directory, combine with source file name 
-            if (Directory.Exists(destPath))
-            {
-                var fileName = Path.GetFileName(sourcePath);
-                destPath = Path.Combine(destPath, fileName);
-            }
-
+            if (!IsPathWithinFolder(destPath, DefaultFolder))
+                return BadRequest("Destination path is not within sandbox.");
             try
             {
-                System.IO.File.Copy(sourcePath, destPath, overwrite: true);
+                if (System.IO.File.Exists(sourcePath))
+                {
+                    // If destPath is a directory, combine with source file name
+                    if (Directory.Exists(destPath))
+                    {
+                        var fileName = Path.GetFileName(sourcePath);
+                        destPath = Path.Combine(destPath, fileName);
+                    }
+                    System.IO.File.Copy(sourcePath, destPath, overwrite: true);
+                }
+                else if (Directory.Exists(sourcePath))
+                {
+                    // If destPath exists and is a file, error
+                    if (System.IO.File.Exists(destPath))
+                        return BadRequest("Cannot copy directory to a file path.");
+
+                    // If destPath is an existing directory, copy into it
+                    if (Directory.Exists(destPath))
+                    {
+                        var dirName = Path.GetFileName(sourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                        destPath = Path.Combine(destPath, dirName);
+                    }
+                    CopyDirectory(sourcePath, destPath);
+                }
+                else
+                {
+                    return BadRequest("Source path does not exist.");
+                }
                 return Ok();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error copying file: {Source} -> {Dest}", sourcePath, destPath);
-                return StatusCode(500, "Error copying file.");
+                _logger.LogError(ex, "Error copying: {Source} -> {Dest}", sourcePath, destPath);
+                return StatusCode(500, "Error copying file or directory.");
             }
+        }
+
+        /// <summary>
+        /// Recursively copy a directory
+        /// </summary>
+        /// <param name="sourceDir"></param>
+        /// <param name="destDir"></param>
+        private void CopyDirectory(string sourceDir, string destDir)
+        {
+            Directory.CreateDirectory(destDir);
+            foreach (var file in Directory.GetFiles(sourceDir))
+            {
+                var destFile = Path.Combine(destDir, Path.GetFileName(file));
+                System.IO.File.Copy(file, destFile, overwrite: true);
+            }
+            foreach (var dir in Directory.GetDirectories(sourceDir))
+            {
+                var destSubDir = Path.Combine(destDir, Path.GetFileName(dir));
+                CopyDirectory(dir, destSubDir);
+            }
+        }
+
+        /// <summary>
+        /// Check if a given path is within a specified folder.
+        /// </summary>
+        /// <param name="itemPath"></param>
+        /// <param name="folderPath"></param>
+        /// <returns></returns>
+        private static bool IsPathWithinFolder(string itemPath, string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(itemPath) || string.IsNullOrWhiteSpace(folderPath))
+                return false;
+           
+            var itemFullPath = Path.GetFullPath(itemPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var folderFullPath = Path.GetFullPath(folderPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            
+            return itemFullPath.StartsWith(folderFullPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(itemFullPath, folderFullPath, StringComparison.OrdinalIgnoreCase);
         }
     }
 }
